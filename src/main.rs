@@ -1,14 +1,25 @@
 use macroquad::prelude::*;
 use std::collections::HashSet;
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
+pub enum Wall {
+    Left = 1,
+    Top = 2,
+    Right = 4,
+    Bottom = 8,
+}
+
 #[derive(Debug)]
 pub struct Tile {
     walls: HashSet<Wall>,
-    position: Vec2,
+    screen_position: Vec2,
+    width: f32,
+    height: f32,
+    color: Color,
 }
 
 impl Tile {
-    pub fn new(x: f32, y: f32) -> Self {
+    pub fn new(x: f32, y: f32, w: f32, h: f32, c: Color) -> Self {
         let mut walls: HashSet<Wall> = HashSet::new();
         walls.insert(Wall::Left);
         walls.insert(Wall::Top);
@@ -16,7 +27,10 @@ impl Tile {
         walls.insert(Wall::Bottom);
         Self {
             walls,
-            position: (x, y).into(),
+            screen_position: (x, y).into(),
+            width: w,
+            height: h,
+            color: c,
         }
     }
 
@@ -24,23 +38,23 @@ impl Tile {
         self.walls.remove(wall)
     }
 
-    pub fn draw(&self, w: f32, h: f32, color: Color, material: &Material) {
+    pub fn draw(&self, material: &Material) {
+        let mut walls_sum: i32 = 0;
         for wall in &self.walls {
-            material.set_uniform("border_side", wall);
-            material.set_uniform("tile_color", color.to_vec());
-            material.set_uniform("border_color", BLUE.to_vec());
+            walls_sum = walls_sum + (*wall as i32);
         }
+        material.set_uniform("border_side", walls_sum);
+        material.set_uniform("tile_color", self.color.to_vec());
+        material.set_uniform("border_color", DARKGRAY.to_vec());
         gl_use_material(&material);
-        draw_rectangle(self.position.x, self.position.y, w, h, color);
+        draw_rectangle(
+            self.screen_position.x,
+            self.screen_position.y,
+            self.width,
+            self.height,
+            self.color,
+        );
     }
-}
-
-#[derive(Hash, Eq, PartialEq, Debug)]
-pub enum Wall {
-    Left = 0,
-    Top = 1,
-    Right = 2,
-    Bottom = 3,
 }
 
 #[macroquad::main("Pixel Art Tiles")]
@@ -50,7 +64,7 @@ async fn main() {
     let fragment_shader = include_str!("shaders/border.glsl");
 
     // Create a single material with our unified shader
-    let material = load_material(
+    let tile_material = load_material(
         ShaderSource::Glsl {
             vertex: vertex_shader,
             fragment: fragment_shader,
@@ -69,80 +83,27 @@ async fn main() {
     loop {
         clear_background(BLACK);
 
-        //// Calculate positions and size for our four tiles
-        //let tile_size = 100.0; // Size in screen pixels
-        //let spacing = 20.0;
-        //let start_x = screen_width() / 2.0 - tile_size - spacing / 2.0;
-        //let start_y = screen_height() / 2.0 - tile_size - spacing / 2.0;
-        //
-        //// Draw bottom-left tile (left border)
-        //material.set_uniform("border_side", 1);
-        //gl_use_material(&material);
-        //draw_rectangle(
-        //    start_x,
-        //    start_y + tile_size + spacing,
-        //    tile_size,
-        //    tile_size,
-        //    WHITE,
-        //);
-        //
-        //// Draw top-left tile (top border)
-        //material.set_uniform("border_side", 1);
-        //gl_use_material(&material);
-        //draw_rectangle(start_x, start_y, tile_size, tile_size, WHITE);
-        //
-        //// Draw top-right tile (right border)
-        //material.set_uniform("border_side", 2);
-        //gl_use_material(&material);
-        //draw_rectangle(
-        //    start_x + tile_size + spacing,
-        //    start_y,
-        //    tile_size,
-        //    tile_size,
-        //    WHITE,
-        //);
-        //
-        //// Draw bottom-right tile (bottom border)
-        //material.set_uniform("border_side", 3);
-        //gl_use_material(&material);
-        //draw_rectangle(
-        //    start_x + tile_size + spacing,
-        //    start_y + tile_size + spacing,
-        //    tile_size,
-        //    tile_size,
-        //    WHITE,
-        //);
+        let mut test = Tile::new(100.0, 100.0, 100.0, 100.0, BROWN);
+        test.remove_wall(&Wall::Left);
+        test.draw(&tile_material);
 
-        let test = Tile::new(50.0, 50.0);
-        test.draw(250.0, 250.0, RED, &material);
+        let mut test2 = Tile::new(200.0, 100.0, 100.0, 100.0, BROWN);
+        test2.remove_wall(&Wall::Top);
+        test2.draw(&tile_material);
+
+        let mut test3 = Tile::new(100.0, 200.0, 100.0, 100.0, BROWN);
+        test3.remove_wall(&Wall::Bottom);
+        test3.draw(&tile_material);
+
+        let mut test4 = Tile::new(200.0, 200.0, 100.0, 100.0, BROWN);
+        test4.remove_wall(&Wall::Right);
+        test4.remove_wall(&Wall::Left);
+        test4.remove_wall(&Wall::Bottom);
+        test4.remove_wall(&Wall::Top);
+        test4.draw(&tile_material);
 
         // Reset to default material
         gl_use_default_material();
-
-        // Draw labels for each tile
-        //let font_size = 16.0;
-        //draw_text("Top Border", start_x, start_y - 5.0, font_size, WHITE);
-        //draw_text(
-        //    "Right Border",
-        //    start_x + tile_size + spacing,
-        //    start_y - 5.0,
-        //    font_size,
-        //    WHITE,
-        //);
-        //draw_text(
-        //    "Bottom Border",
-        //    start_x + tile_size + spacing,
-        //    start_y + tile_size * 2.0 + spacing + 15.0,
-        //    font_size,
-        //    WHITE,
-        //);
-        //draw_text(
-        //    "Left Border",
-        //    start_x,
-        //    start_y + tile_size * 2.0 + spacing + 15.0,
-        //    font_size,
-        //    WHITE,
-        //);
 
         next_frame().await
     }
