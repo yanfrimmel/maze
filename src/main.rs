@@ -1,5 +1,50 @@
 use macroquad::prelude::*;
-use std::collections::HashSet;
+use macroquad::rand::ChooseRandom;
+use std::collections::{HashSet, VecDeque};
+use std::fmt;
+use std::hash::{Hash, Hasher};
+
+#[derive(Debug, Clone)]
+pub struct Vec2d<T> {
+    vec: Vec<T>,
+    rows: usize,
+    cols: usize,
+}
+
+impl<T> Vec2d<T> {
+    pub fn new(vec: Vec<T>, rows: usize, cols: usize) -> Self {
+        assert!(vec.len() == rows * cols);
+        Self { vec, rows, cols }
+    }
+
+    pub fn row(&self, row: usize) -> &[T] {
+        let i = self.cols * row;
+        &self.vec[i..(i + self.cols)]
+    }
+
+    pub fn index(&self, row: usize, col: usize) -> &T {
+        let i = self.cols * row;
+        &self.vec[i + col]
+    }
+
+    pub fn index_mut(&mut self, row: usize, col: usize) -> &mut T {
+        let i = self.cols * row;
+        &mut self.vec[i + col]
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Display for Vec2d<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut str = String::new();
+        for i in 0..self.rows {
+            if i != 0 {
+                str.push_str(", ");
+            }
+            str.push_str(&format!("{:?}", &self.row(i)));
+        }
+        write!(f, "[{}]", str)
+    }
+}
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub enum Wall {
@@ -9,8 +54,10 @@ pub enum Wall {
     Bottom = 8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tile {
+    row: usize,
+    col: usize,
     walls: HashSet<Wall>,
     screen_position: Vec2,
     width: f32,
@@ -18,19 +65,44 @@ pub struct Tile {
     color: Color,
 }
 
+impl PartialEq for Tile {
+    fn eq(&self, other: &Self) -> bool {
+        self.col == other.col && self.row == other.row
+    }
+}
+
+impl Eq for Tile {}
+
+impl Hash for Tile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.row.hash(state);
+        self.col.hash(state);
+    }
+}
+
 impl Tile {
-    pub fn new(x: f32, y: f32, w: f32, h: f32, c: Color) -> Self {
+    pub fn new(
+        col: usize,
+        row: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: Color,
+    ) -> Self {
         let mut walls: HashSet<Wall> = HashSet::new();
         walls.insert(Wall::Left);
         walls.insert(Wall::Top);
         walls.insert(Wall::Right);
         walls.insert(Wall::Bottom);
         Self {
+            row,
+            col,
             walls,
             screen_position: (x, y).into(),
-            width: w,
-            height: h,
-            color: c,
+            width,
+            height,
+            color,
         }
     }
 
@@ -57,7 +129,153 @@ impl Tile {
     }
 }
 
-#[macroquad::main("Pixel Art Tiles")]
+fn generate_tiles() -> Vec2d<Tile> {
+    let tile_size: u16 = 100;
+    let s_w = screen_width();
+    let s_h = screen_height();
+
+    let tiles_w: u16 = s_w as u16 / tile_size;
+    let tiles_h: u16 = s_h as u16 / tile_size;
+
+    let reminder_w: u16 = s_w as u16 % tile_size;
+    let reminder_h: u16 = s_h as u16 % tile_size;
+
+    let first_x = reminder_w / 2;
+    let first_y = reminder_h / 2;
+    let mut tiles: Vec<Tile> = Vec::new();
+
+    for x in 0..tiles_w {
+        for y in 0..tiles_h {
+            tiles.push(Tile::new(
+                x as usize,
+                y as usize,
+                (x * tile_size + first_x) as f32,
+                (y * tile_size + first_y) as f32,
+                tile_size as f32,
+                tile_size as f32,
+                BROWN,
+            ));
+        }
+    }
+
+    Vec2d::new(tiles, tiles_h as usize, tiles_w as usize)
+}
+
+pub fn iterative_backtracking(tiles: &mut Vec2d<Tile>) {
+    let mut visited: HashSet<(usize, usize)> = HashSet::new();
+    let mut stack: VecDeque<(usize, usize)> = VecDeque::new();
+
+    // Choose random starting position
+    rand::srand(10);
+    let mut curr_row = rand::gen_range(0, tiles.rows);
+    let mut curr_col = rand::gen_range(0, tiles.cols);
+    stack.push_back((curr_row, curr_col));
+    visited.insert((curr_row, curr_col));
+    let len = tiles.vec.len();
+
+    while visited.len() != len {
+        let mut neighbors =
+            get_unvisited_neighbors(curr_row, curr_col, tiles.rows, tiles.cols, &visited);
+        if neighbors.len() != 0 {
+            neighbors.shuffle();
+            let (nr, nc) = neighbors[0];
+            remove_walls_between_positions(tiles, (curr_row, curr_col), (nr, nc));
+            println!(
+                "neighbors: (curr_row, curr_col): {:?}",
+                (curr_row, curr_col)
+            );
+            stack.push_back((curr_row, curr_col));
+            (curr_row, curr_col) = (nr, nc);
+            visited.insert((nr, nc));
+        } else if stack.len() != 0 {
+            (curr_row, curr_col) = stack.pop_front().unwrap();
+            println!("stack: (curr_row, curr_col): {:?}", (curr_row, curr_col));
+        } else {
+            // println!("(curr_row, curr_col): {:?}", (curr_row, curr_col));
+        }
+    }
+}
+
+fn remove_walls_between_positions(
+    tiles: &mut Vec2d<Tile>,
+    pos1: (usize, usize),
+    pos2: (usize, usize),
+) {
+    let (row1, col1) = pos1;
+    let (row2, col2) = pos2;
+
+    if row1 == row2 {
+        // Horizontal neighbors
+        if col1 < col2 {
+            tiles.index_mut(row1, col1).remove_wall(&Wall::Right);
+            tiles.index_mut(row2, col2).remove_wall(&Wall::Left);
+        } else {
+            tiles.index_mut(row1, col1).remove_wall(&Wall::Left);
+            tiles.index_mut(row2, col2).remove_wall(&Wall::Right);
+        }
+    } else {
+        // Vertical neighbors
+        if row1 < row2 {
+            tiles.index_mut(row1, col1).remove_wall(&Wall::Bottom);
+            tiles.index_mut(row2, col2).remove_wall(&Wall::Top);
+        } else {
+            tiles.index_mut(row1, col1).remove_wall(&Wall::Top);
+            tiles.index_mut(row2, col2).remove_wall(&Wall::Bottom);
+        }
+    }
+}
+
+fn get_all_neighbors(
+    row: usize,
+    col: usize,
+    max_rows: usize,
+    max_cols: usize,
+) -> Vec<(usize, usize)> {
+    let mut neighbors = Vec::with_capacity(4);
+
+    if row > 0 {
+        neighbors.push((row - 1, col));
+    } // North
+    if row < max_rows - 1 {
+        neighbors.push((row + 1, col));
+    } // South
+    if col > 0 {
+        neighbors.push((row, col - 1));
+    } // West
+    if col < max_cols - 1 {
+        neighbors.push((row, col + 1));
+    } // East
+
+    neighbors
+}
+
+fn get_unvisited_neighbors(
+    row: usize,
+    col: usize,
+    max_rows: usize,
+    max_cols: usize,
+    visited: &HashSet<(usize, usize)>,
+) -> Vec<(usize, usize)> {
+    let mut neighbors = Vec::with_capacity(4);
+
+    // Check all four directions
+    if row > 0 && !visited.contains(&(row - 1, col)) {
+        neighbors.push((row - 1, col));
+    }
+    if row < max_rows - 1 && !visited.contains(&(row + 1, col)) {
+        neighbors.push((row + 1, col));
+    }
+    if col > 0 && !visited.contains(&(row, col - 1)) {
+        neighbors.push((row, col - 1));
+    }
+    if col < max_cols - 1 && !visited.contains(&(row, col + 1)) {
+        neighbors.push((row, col + 1));
+    }
+
+    neighbors
+}
+
+#[macroquad::main("Maze")]
 async fn main() {
     // Load shader files
     let vertex_shader = include_str!("shaders/vertex.glsl");
@@ -80,27 +298,39 @@ async fn main() {
     )
     .unwrap();
 
+    let mut tiles = generate_tiles();
+
+    println!("cols: {}", tiles.cols);
+    println!("rows: {}", tiles.rows);
+    println!("tiles: {}", tiles.vec.len());
+
+    iterative_backtracking(&mut tiles);
+
     loop {
         clear_background(BLACK);
 
-        let mut test = Tile::new(100.0, 100.0, 100.0, 100.0, BROWN);
-        test.remove_wall(&Wall::Left);
-        test.draw(&tile_material);
+        for tile in &tiles.vec {
+            tile.draw(&tile_material);
+        }
 
-        let mut test2 = Tile::new(200.0, 100.0, 100.0, 100.0, BROWN);
-        test2.remove_wall(&Wall::Top);
-        test2.draw(&tile_material);
-
-        let mut test3 = Tile::new(100.0, 200.0, 100.0, 100.0, BROWN);
-        test3.remove_wall(&Wall::Bottom);
-        test3.draw(&tile_material);
-
-        let mut test4 = Tile::new(200.0, 200.0, 100.0, 100.0, BROWN);
-        test4.remove_wall(&Wall::Right);
-        test4.remove_wall(&Wall::Left);
-        test4.remove_wall(&Wall::Bottom);
-        test4.remove_wall(&Wall::Top);
-        test4.draw(&tile_material);
+        // let mut test = Tile::new(100.0, 100.0, 100.0, 100.0, BROWN);
+        // test.remove_wall(&Wall::Left);
+        // test.draw(&tile_material);
+        //
+        // let mut test2 = Tile::new(200.0, 100.0, 100.0, 100.0, BROWN);
+        // test2.remove_wall(&Wall::Top);
+        // test2.draw(&tile_material);
+        //
+        // let mut test3 = Tile::new(100.0, 200.0, 100.0, 100.0, BROWN);
+        // test3.remove_wall(&Wall::Bottom);
+        // test3.draw(&tile_material);
+        //
+        // let mut test4 = Tile::new(200.0, 200.0, 100.0, 100.0, BROWN);
+        // test4.remove_wall(&Wall::Right);
+        // test4.remove_wall(&Wall::Left);
+        // test4.remove_wall(&Wall::Bottom);
+        // test4.remove_wall(&Wall::Top);
+        // test4.draw(&tile_material);
 
         // Reset to default material
         gl_use_default_material();
