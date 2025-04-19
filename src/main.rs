@@ -1,6 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::ChooseRandom;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
@@ -27,7 +27,7 @@ impl<T> Vec2d<T> {
         &self.vec[i + col]
     }
 
-    pub fn index_mut(&mut self, row: usize, col: usize) -> &mut T {
+    pub fn index_mut(&mut self, col: usize, row: usize) -> &mut T {
         let i = self.cols * row;
         &mut self.vec[i + col]
     }
@@ -75,8 +75,7 @@ impl Eq for Tile {}
 
 impl Hash for Tile {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.row.hash(state);
-        self.col.hash(state);
+        (self.row + 1 * self.col + 1).hash(state);
     }
 }
 
@@ -115,6 +114,8 @@ impl Tile {
         for wall in &self.walls {
             walls_sum = walls_sum + (*wall as i32);
         }
+        let pixels: f32 = 8.0;
+        material.set_uniform("pixels", pixels);
         material.set_uniform("border_side", walls_sum);
         material.set_uniform("tile_color", self.color.to_vec());
         material.set_uniform("border_color", DARKGRAY.to_vec());
@@ -144,8 +145,8 @@ fn generate_tiles() -> Vec2d<Tile> {
     let first_y = reminder_h / 2;
     let mut tiles: Vec<Tile> = Vec::new();
 
-    for x in 0..tiles_w {
-        for y in 0..tiles_h {
+    for y in 0..tiles_h {
+        for x in 0..tiles_w {
             tiles.push(Tile::new(
                 x as usize,
                 y as usize,
@@ -163,37 +164,48 @@ fn generate_tiles() -> Vec2d<Tile> {
 
 pub fn iterative_backtracking(tiles: &mut Vec2d<Tile>) {
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
-    let mut stack: VecDeque<(usize, usize)> = VecDeque::new();
+    let mut stack: Vec<(usize, usize)> = Vec::new();
 
     // Choose random starting position
     rand::srand(10);
     let mut curr_row = rand::gen_range(0, tiles.rows);
     let mut curr_col = rand::gen_range(0, tiles.cols);
-    stack.push_back((curr_row, curr_col));
-    visited.insert((curr_row, curr_col));
+    stack.push((curr_col, curr_row));
+    visited.insert((curr_col, curr_row));
     let len = tiles.vec.len();
 
     while visited.len() != len {
         let mut neighbors =
-            get_unvisited_neighbors(curr_row, curr_col, tiles.rows, tiles.cols, &visited);
+            get_unvisited_neighbors(curr_col, curr_row, tiles.cols, tiles.rows, &visited);
+        println!("curr (col, row): {:?}", (curr_col, curr_row));
+        println!("neighbors: {:?}", neighbors);
         if neighbors.len() != 0 {
             neighbors.shuffle();
-            let (nr, nc) = neighbors[0];
-            remove_walls_between_positions(tiles, (curr_row, curr_col), (nr, nc));
+            let (nc, nr) = neighbors[0];
+            remove_walls_between_positions(tiles, (curr_col, curr_row), (nc, nr));
+
             println!(
-                "neighbors: (curr_row, curr_col): {:?}",
-                (curr_row, curr_col)
+                "carve: cur: {:?}, other: {:?}",
+                (curr_col, curr_row),
+                (nc, nr)
             );
-            stack.push_back((curr_row, curr_col));
-            (curr_row, curr_col) = (nr, nc);
-            visited.insert((nr, nc));
+
+            stack.push((curr_col, curr_row));
+            (curr_col, curr_row) = (nc, nr);
+            visited.insert((nc, nr));
+            // println!("visited: (curr_row, curr_col): {:?}", (curr_row, curr_col));
         } else if stack.len() != 0 {
-            (curr_row, curr_col) = stack.pop_front().unwrap();
-            println!("stack: (curr_row, curr_col): {:?}", (curr_row, curr_col));
+            (curr_col, curr_row) = stack.pop().unwrap();
+            // println!(
+            //     "stack pop: (curr_row, curr_col): {:?}",
+            //     (curr_row, curr_col)
+            // );
         } else {
+            panic!("infinite loop");
             // println!("(curr_row, curr_col): {:?}", (curr_row, curr_col));
         }
     }
+    // println!("Result: {:?}", visited);
 }
 
 fn remove_walls_between_positions(
@@ -201,26 +213,26 @@ fn remove_walls_between_positions(
     pos1: (usize, usize),
     pos2: (usize, usize),
 ) {
-    let (row1, col1) = pos1;
-    let (row2, col2) = pos2;
+    let (col1, row1) = pos1;
+    let (col2, row2) = pos2;
 
     if row1 == row2 {
         // Horizontal neighbors
         if col1 < col2 {
-            tiles.index_mut(row1, col1).remove_wall(&Wall::Right);
-            tiles.index_mut(row2, col2).remove_wall(&Wall::Left);
+            tiles.index_mut(col1, row1).remove_wall(&Wall::Right);
+            tiles.index_mut(col2, row2).remove_wall(&Wall::Left);
         } else {
-            tiles.index_mut(row1, col1).remove_wall(&Wall::Left);
-            tiles.index_mut(row2, col2).remove_wall(&Wall::Right);
+            tiles.index_mut(col1, row1).remove_wall(&Wall::Left);
+            tiles.index_mut(col2, row2).remove_wall(&Wall::Right);
         }
     } else {
         // Vertical neighbors
         if row1 < row2 {
-            tiles.index_mut(row1, col1).remove_wall(&Wall::Bottom);
-            tiles.index_mut(row2, col2).remove_wall(&Wall::Top);
+            tiles.index_mut(col1, row1).remove_wall(&Wall::Bottom);
+            tiles.index_mut(col2, row2).remove_wall(&Wall::Top);
         } else {
-            tiles.index_mut(row1, col1).remove_wall(&Wall::Top);
-            tiles.index_mut(row2, col2).remove_wall(&Wall::Bottom);
+            tiles.index_mut(col1, row1).remove_wall(&Wall::Top);
+            tiles.index_mut(col2, row2).remove_wall(&Wall::Bottom);
         }
     }
 }
@@ -250,26 +262,26 @@ fn get_all_neighbors(
 }
 
 fn get_unvisited_neighbors(
-    row: usize,
     col: usize,
-    max_rows: usize,
+    row: usize,
     max_cols: usize,
+    max_rows: usize,
     visited: &HashSet<(usize, usize)>,
 ) -> Vec<(usize, usize)> {
     let mut neighbors = Vec::with_capacity(4);
 
     // Check all four directions
-    if row > 0 && !visited.contains(&(row - 1, col)) {
-        neighbors.push((row - 1, col));
+    if row > 0 && !visited.contains(&(col, row - 1)) {
+        neighbors.push((col, row - 1));
     }
-    if row < max_rows - 1 && !visited.contains(&(row + 1, col)) {
-        neighbors.push((row + 1, col));
+    if row < max_rows - 1 && !visited.contains(&(col, row + 1)) {
+        neighbors.push((col, row + 1));
     }
-    if col > 0 && !visited.contains(&(row, col - 1)) {
-        neighbors.push((row, col - 1));
+    if col > 0 && !visited.contains(&(col - 1, row)) {
+        neighbors.push((col - 1, row));
     }
-    if col < max_cols - 1 && !visited.contains(&(row, col + 1)) {
-        neighbors.push((row, col + 1));
+    if col < max_cols - 1 && !visited.contains(&(col + 1, row)) {
+        neighbors.push((col + 1, row));
     }
 
     neighbors
@@ -289,6 +301,7 @@ async fn main() {
         },
         MaterialParams {
             uniforms: vec![
+                UniformDesc::new("pixels", UniformType::Float1),
                 UniformDesc::new("border_side", UniformType::Int1),
                 UniformDesc::new("tile_color", UniformType::Float4),
                 UniformDesc::new("border_color", UniformType::Float4),
