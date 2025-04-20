@@ -114,7 +114,7 @@ impl Tile {
         for wall in &self.walls {
             walls_sum = walls_sum + (*wall as i32);
         }
-        let pixels: f32 = 8.0;
+        let pixels: f32 = 16.0;
         material.set_uniform("pixels", pixels);
         material.set_uniform("border_side", walls_sum);
         material.set_uniform("tile_color", self.color.to_vec());
@@ -131,9 +131,16 @@ impl Tile {
 }
 
 fn generate_tiles() -> Vec2d<Tile> {
-    let tile_size: u16 = 100;
     let s_w = screen_width();
     let s_h = screen_height();
+    let number_of_tiles_in_bigger_axis = 20;
+    let tile_size;
+
+    if s_w > s_h {
+        tile_size = (s_w / number_of_tiles_in_bigger_axis as f32) as u16;
+    } else {
+        tile_size = (s_h / number_of_tiles_in_bigger_axis as f32) as u16;
+    }
 
     let tiles_w: u16 = s_w as u16 / tile_size;
     let tiles_h: u16 = s_h as u16 / tile_size;
@@ -228,7 +235,6 @@ pub fn iterative_backtracking_old(tiles: &mut Vec2d<Tile>) {
     let mut stack: Vec<(usize, usize)> = Vec::new();
 
     // Choose random starting position
-    rand::srand(10);
     let mut curr_row = rand::gen_range(0, tiles.rows);
     let mut curr_col = rand::gen_range(0, tiles.cols);
     stack.push((curr_col, curr_row));
@@ -274,9 +280,13 @@ pub fn remove_random_walls(tiles: &mut Vec2d<Tile>, percentage: f32) {
     // Get total number of potential internal walls to remove
     // Each tile has 4 walls but walls are shared, so count total connections
     let total_internal_walls = (tiles.rows - 1) * tiles.cols + (tiles.cols - 1) * tiles.rows;
-
     // Calculate how many walls to remove
     let walls_to_remove = (total_internal_walls as f32 * percentage) as usize;
+
+    println!(
+        "total_internal_walls: {}, walls_to_remove: {}",
+        total_internal_walls, walls_to_remove
+    );
 
     // Track which walls we've already removed
     let mut removed_connections: HashSet<((usize, usize), (usize, usize))> = HashSet::new();
@@ -420,6 +430,11 @@ fn get_unvisited_neighbors(
 
 #[macroquad::main("Maze")]
 async fn main() {
+    let time = macroquad::miniquad::date::now();
+
+    println!("Rand seed: {}", time);
+    rand::srand(time as _);
+
     // Load shader files
     let vertex_shader = include_str!("shaders/vertex.glsl");
     let fragment_shader = include_str!("shaders/border.glsl");
@@ -452,13 +467,12 @@ async fn main() {
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut stack: Vec<(usize, usize)> = Vec::new();
 
-    rand::srand(10);
     let start_row = rand::gen_range(0, tiles.rows);
     let start_col = rand::gen_range(0, tiles.cols);
     let mut start_position = (start_col, start_row);
     let max_steps = 1;
 
-    let interval = 0.05;
+    let interval = 0.01;
     let mut run_time: f64 = interval;
     let mut generation_done = false;
 
@@ -478,7 +492,7 @@ async fn main() {
                 );
                 run_time = seconds_passed + interval;
             } else if visited.len() == tiles_len {
-                let precentage = rand::gen_range(0.05, 0.1);
+                let precentage = rand::gen_range(0.01, 0.05);
                 remove_random_walls(&mut tiles, precentage);
                 generation_done = true;
                 println!("Maze generation done!")
