@@ -22,7 +22,7 @@ impl<T> Vec2d<T> {
         &self.vec[i..(i + self.cols)]
     }
 
-    pub fn index(&self, row: usize, col: usize) -> &T {
+    pub fn index(&self, col: usize, row: usize) -> &T {
         let i = self.cols * row;
         &self.vec[i + col]
     }
@@ -162,7 +162,68 @@ fn generate_tiles() -> Vec2d<Tile> {
     Vec2d::new(tiles, tiles_h as usize, tiles_w as usize)
 }
 
-pub fn iterative_backtracking(tiles: &mut Vec2d<Tile>) {
+/// Performs maze generation using the iterative backtracking algorithm with a step limit
+///
+/// Parameters:
+/// - tiles: The 2D grid of tiles to carve the maze into
+/// - visited: HashSet tracking which cells have been visited
+/// - stack: Stack used for backtracking
+/// - start_position: The starting position (column, row) for maze generation
+/// - max_steps: Maximum number of steps to take before stopping (0 for unlimited)
+///
+/// Returns:
+/// - The final position (column, row) where generation ended
+pub fn iterative_backtracking(
+    tiles: &mut Vec2d<Tile>,
+    visited: &mut HashSet<(usize, usize)>,
+    stack: &mut Vec<(usize, usize)>,
+    start_position: (usize, usize),
+    max_steps: usize,
+) -> (usize, usize) {
+    let (mut curr_col, mut curr_row) = start_position;
+    let mut steps_taken = 0;
+
+    // Initialize if the stack is empty (first call)
+    if stack.is_empty() {
+        stack.push((curr_col, curr_row));
+        visited.insert((curr_col, curr_row));
+    }
+
+    let len = tiles.vec.len();
+    let unlimited = max_steps == 0;
+
+    while visited.len() != len && (unlimited || steps_taken < max_steps) {
+        steps_taken += 1;
+
+        let mut neighbors =
+            get_unvisited_neighbors(curr_col, curr_row, tiles.cols, tiles.rows, &visited);
+        // println!("curr (col, row): {:?}", (curr_col, curr_row));
+        // println!("neighbors: {:?}", neighbors);
+
+        if neighbors.len() != 0 {
+            neighbors.shuffle();
+            let (nc, nr) = neighbors[0];
+            remove_walls_between_positions(tiles, (curr_col, curr_row), (nc, nr));
+
+            // println!(
+            //     "carve: cur: {:?}, other: {:?}",
+            //     (curr_col, curr_row),
+            //     (nc, nr)
+            // );
+            stack.push((curr_col, curr_row));
+            (curr_col, curr_row) = (nc, nr);
+            visited.insert((nc, nr));
+        } else if stack.len() != 0 {
+            (curr_col, curr_row) = stack.pop().unwrap();
+        } else {
+            panic!("Infinite loop");
+        }
+    }
+
+    (curr_col, curr_row)
+}
+
+pub fn iterative_backtracking_old(tiles: &mut Vec2d<Tile>) {
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut stack: Vec<(usize, usize)> = Vec::new();
 
@@ -177,19 +238,17 @@ pub fn iterative_backtracking(tiles: &mut Vec2d<Tile>) {
     while visited.len() != len {
         let mut neighbors =
             get_unvisited_neighbors(curr_col, curr_row, tiles.cols, tiles.rows, &visited);
-        println!("curr (col, row): {:?}", (curr_col, curr_row));
-        println!("neighbors: {:?}", neighbors);
+        // println!("curr (col, row): {:?}", (curr_col, curr_row));
+        // println!("neighbors: {:?}", neighbors);
         if neighbors.len() != 0 {
             neighbors.shuffle();
             let (nc, nr) = neighbors[0];
             remove_walls_between_positions(tiles, (curr_col, curr_row), (nc, nr));
-
-            println!(
-                "carve: cur: {:?}, other: {:?}",
-                (curr_col, curr_row),
-                (nc, nr)
-            );
-
+            // println!(
+            //     "carve: cur: {:?}, other: {:?}",
+            //     (curr_col, curr_row),
+            //     (nc, nr)
+            // );
             stack.push((curr_col, curr_row));
             (curr_col, curr_row) = (nc, nr);
             visited.insert((nc, nr));
@@ -206,6 +265,102 @@ pub fn iterative_backtracking(tiles: &mut Vec2d<Tile>) {
         }
     }
     // println!("Result: {:?}", visited);
+}
+
+pub fn remove_random_walls(tiles: &mut Vec2d<Tile>, percentage: f32) {
+    // Ensure percentage is within valid range (0.0 to 1.0)
+    let percentage = percentage.clamp(0.0, 1.0);
+
+    // Get total number of potential internal walls to remove
+    // Each tile has 4 walls but walls are shared, so count total connections
+    let total_internal_walls = (tiles.rows - 1) * tiles.cols + (tiles.cols - 1) * tiles.rows;
+
+    // Calculate how many walls to remove
+    let walls_to_remove = (total_internal_walls as f32 * percentage) as usize;
+
+    // Track which walls we've already removed
+    let mut removed_connections: HashSet<((usize, usize), (usize, usize))> = HashSet::new();
+
+    // Try to remove the specified number of walls
+    let mut count = 0;
+    let mut attempts = 0;
+    let max_attempts = total_internal_walls * 5; // Limit attempts to avoid infinite loop
+
+    while count < walls_to_remove && attempts < max_attempts {
+        attempts += 1;
+
+        // Pick a random tile
+        let col = rand::gen_range(0, tiles.cols);
+        let row = rand::gen_range(0, tiles.rows);
+
+        // Pick a random direction (0=right, 1=bottom, 2=left, 3=top)
+        let direction = rand::gen_range(0, 4);
+
+        // Find neighboring tile in chosen direction
+        let neighbor = match direction {
+            0 => {
+                if col < tiles.cols - 1 {
+                    Some((col + 1, row))
+                } else {
+                    None
+                }
+            }
+            1 => {
+                if row < tiles.rows - 1 {
+                    Some((col, row + 1))
+                } else {
+                    None
+                }
+            }
+            2 => {
+                if col > 0 {
+                    Some((col - 1, row))
+                } else {
+                    None
+                }
+            }
+            3 => {
+                if row > 0 {
+                    Some((col, row - 1))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        if let Some((n_col, n_row)) = neighbor {
+            // Order tile coordinates for consistent HashSet lookup
+            let connection = if (col, row) < (n_col, n_row) {
+                ((col, row), (n_col, n_row))
+            } else {
+                ((n_col, n_row), (col, row))
+            };
+
+            // Skip if we've already removed this wall
+            if removed_connections.contains(&connection) {
+                continue;
+            }
+
+            // Check if there's a wall between these tiles
+            let has_wall = match direction {
+                0 => tiles.index(col, row).walls.contains(&Wall::Right),
+                1 => tiles.index(col, row).walls.contains(&Wall::Bottom),
+                2 => tiles.index(col, row).walls.contains(&Wall::Left),
+                3 => tiles.index(col, row).walls.contains(&Wall::Top),
+                _ => false,
+            };
+
+            if has_wall {
+                // Remove the wall between tiles
+                remove_walls_between_positions(tiles, (col, row), (n_col, n_row));
+                removed_connections.insert(connection);
+                count += 1;
+            }
+        }
+    }
+
+    println!("Removed {} walls out of {} attempts", count, attempts);
 }
 
 fn remove_walls_between_positions(
@@ -235,30 +390,6 @@ fn remove_walls_between_positions(
             tiles.index_mut(col2, row2).remove_wall(&Wall::Bottom);
         }
     }
-}
-
-fn get_all_neighbors(
-    row: usize,
-    col: usize,
-    max_rows: usize,
-    max_cols: usize,
-) -> Vec<(usize, usize)> {
-    let mut neighbors = Vec::with_capacity(4);
-
-    if row > 0 {
-        neighbors.push((row - 1, col));
-    } // North
-    if row < max_rows - 1 {
-        neighbors.push((row + 1, col));
-    } // South
-    if col > 0 {
-        neighbors.push((row, col - 1));
-    } // West
-    if col < max_cols - 1 {
-        neighbors.push((row, col + 1));
-    } // East
-
-    neighbors
 }
 
 fn get_unvisited_neighbors(
@@ -312,15 +443,47 @@ async fn main() {
     .unwrap();
 
     let mut tiles = generate_tiles();
+    let tiles_len = tiles.vec.len();
 
     println!("cols: {}", tiles.cols);
     println!("rows: {}", tiles.rows);
     println!("tiles: {}", tiles.vec.len());
 
-    iterative_backtracking(&mut tiles);
+    let mut visited: HashSet<(usize, usize)> = HashSet::new();
+    let mut stack: Vec<(usize, usize)> = Vec::new();
+
+    rand::srand(10);
+    let start_row = rand::gen_range(0, tiles.rows);
+    let start_col = rand::gen_range(0, tiles.cols);
+    let mut start_position = (start_col, start_row);
+    let max_steps = 1;
+
+    let interval = 0.05;
+    let mut run_time: f64 = interval;
+    let mut generation_done = false;
 
     loop {
         clear_background(BLACK);
+
+        if !generation_done {
+            let seconds_passed = get_time();
+
+            if seconds_passed >= run_time && visited.len() != tiles_len {
+                start_position = iterative_backtracking(
+                    &mut tiles,
+                    &mut visited,
+                    &mut stack,
+                    start_position,
+                    max_steps,
+                );
+                run_time = seconds_passed + interval;
+            } else if visited.len() == tiles_len {
+                let precentage = rand::gen_range(0.05, 0.1);
+                remove_random_walls(&mut tiles, precentage);
+                generation_done = true;
+                println!("Maze generation done!")
+            }
+        }
 
         for tile in &tiles.vec {
             tile.draw(&tile_material);
@@ -347,7 +510,7 @@ async fn main() {
 
         // Reset to default material
         gl_use_default_material();
-
+        draw_fps();
         next_frame().await
     }
 }
