@@ -1,10 +1,11 @@
 use macroquad::prelude::*;
-use macroquad::rand::ChooseRandom;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
 const NUMBER_OF_TILES_IN_BIGGER_AXIS: u16 = 30;
+const PATH_COLOR: Color = BROWN;
+const WALL_COLOR: Color = DARKGRAY;
 
 #[derive(Debug, Clone)]
 pub struct Vec2d<T> {
@@ -108,6 +109,7 @@ impl Tile {
     }
 
     pub fn remove_wall(&mut self, wall: &Wall) -> bool {
+        self.color = PATH_COLOR;
         self.walls.remove(wall)
     }
 
@@ -120,7 +122,7 @@ impl Tile {
         material.set_uniform("pixels", pixels);
         material.set_uniform("border_side", walls_sum);
         material.set_uniform("tile_color", self.color.to_vec());
-        material.set_uniform("border_color", DARKGRAY.to_vec());
+        material.set_uniform("border_color", WALL_COLOR.to_vec());
         gl_use_material(&material);
         draw_rectangle(
             self.screen_position.x,
@@ -162,7 +164,7 @@ fn generate_tiles() -> Vec2d<Tile> {
                 (y * tile_size + first_y) as f32,
                 tile_size as f32,
                 tile_size as f32,
-                BROWN,
+                WALL_COLOR,
             ));
         }
     }
@@ -229,49 +231,6 @@ pub fn iterative_backtracking(
     }
 
     (curr_col, curr_row)
-}
-
-pub fn iterative_backtracking_old(tiles: &mut Vec2d<Tile>) {
-    let mut visited: HashSet<(usize, usize)> = HashSet::new();
-    let mut stack: Vec<(usize, usize)> = Vec::new();
-
-    // Choose random starting position
-    let mut curr_row = rand::gen_range(0, tiles.rows);
-    let mut curr_col = rand::gen_range(0, tiles.cols);
-    stack.push((curr_col, curr_row));
-    visited.insert((curr_col, curr_row));
-    let len = tiles.vec.len();
-
-    while visited.len() != len {
-        let mut neighbors =
-            get_unvisited_neighbors(curr_col, curr_row, tiles.cols, tiles.rows, &visited);
-        // println!("curr (col, row): {:?}", (curr_col, curr_row));
-        // println!("neighbors: {:?}", neighbors);
-        if neighbors.len() != 0 {
-            neighbors.shuffle();
-            let (nc, nr) = neighbors[0];
-            remove_walls_between_positions(tiles, (curr_col, curr_row), (nc, nr));
-            // println!(
-            //     "carve: cur: {:?}, other: {:?}",
-            //     (curr_col, curr_row),
-            //     (nc, nr)
-            // );
-            stack.push((curr_col, curr_row));
-            (curr_col, curr_row) = (nc, nr);
-            visited.insert((nc, nr));
-            // println!("visited: (curr_row, curr_col): {:?}", (curr_row, curr_col));
-        } else if stack.len() != 0 {
-            (curr_col, curr_row) = stack.pop().unwrap();
-            // println!(
-            //     "stack pop: (curr_row, curr_col): {:?}",
-            //     (curr_row, curr_col)
-            // );
-        } else {
-            panic!("infinite loop");
-            // println!("(curr_row, curr_col): {:?}", (curr_row, curr_col));
-        }
-    }
-    // println!("Result: {:?}", visited);
 }
 
 pub fn remove_random_walls(tiles: &mut Vec2d<Tile>, percentage: f32) {
