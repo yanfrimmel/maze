@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+const NUMBER_OF_TILES_IN_BIGGER_AXIS: u16 = 30;
+
 #[derive(Debug, Clone)]
 pub struct Vec2d<T> {
     vec: Vec<T>,
@@ -114,7 +116,7 @@ impl Tile {
         for wall in &self.walls {
             walls_sum = walls_sum + (*wall as i32);
         }
-        let pixels: f32 = 16.0;
+        let pixels: f32 = 8.0;
         material.set_uniform("pixels", pixels);
         material.set_uniform("border_side", walls_sum);
         material.set_uniform("tile_color", self.color.to_vec());
@@ -133,13 +135,12 @@ impl Tile {
 fn generate_tiles() -> Vec2d<Tile> {
     let s_w = screen_width();
     let s_h = screen_height();
-    let number_of_tiles_in_bigger_axis = 20;
     let tile_size;
 
     if s_w > s_h {
-        tile_size = (s_w / number_of_tiles_in_bigger_axis as f32) as u16;
+        tile_size = (s_w / NUMBER_OF_TILES_IN_BIGGER_AXIS as f32) as u16;
     } else {
-        tile_size = (s_h / number_of_tiles_in_bigger_axis as f32) as u16;
+        tile_size = (s_h / NUMBER_OF_TILES_IN_BIGGER_AXIS as f32) as u16;
     }
 
     let tiles_w: u16 = s_w as u16 / tile_size;
@@ -202,14 +203,14 @@ pub fn iterative_backtracking(
     while visited.len() != len && (unlimited || steps_taken < max_steps) {
         steps_taken += 1;
 
-        let mut neighbors =
+        let neighbors =
             get_unvisited_neighbors(curr_col, curr_row, tiles.cols, tiles.rows, &visited);
         // println!("curr (col, row): {:?}", (curr_col, curr_row));
         // println!("neighbors: {:?}", neighbors);
 
-        if neighbors.len() != 0 {
-            neighbors.shuffle();
-            let (nc, nr) = neighbors[0];
+        if !neighbors.is_empty() {
+            let random_index = rand::gen_range(0, neighbors.len());
+            let (nc, nr) = neighbors[random_index];
             remove_walls_between_positions(tiles, (curr_col, curr_row), (nc, nr));
 
             // println!(
@@ -220,7 +221,7 @@ pub fn iterative_backtracking(
             stack.push((curr_col, curr_row));
             (curr_col, curr_row) = (nc, nr);
             visited.insert((nc, nr));
-        } else if stack.len() != 0 {
+        } else if !stack.is_empty() {
             (curr_col, curr_row) = stack.pop().unwrap();
         } else {
             panic!("Infinite loop");
@@ -470,9 +471,9 @@ async fn main() {
     let start_row = rand::gen_range(0, tiles.rows);
     let start_col = rand::gen_range(0, tiles.cols);
     let mut start_position = (start_col, start_row);
-    let max_steps = 1;
+    let max_steps = NUMBER_OF_TILES_IN_BIGGER_AXIS / 10;
 
-    let interval = 0.01;
+    let interval = 0.1 / (NUMBER_OF_TILES_IN_BIGGER_AXIS as f64);
     let mut run_time: f64 = interval;
     let mut generation_done = false;
 
@@ -488,7 +489,7 @@ async fn main() {
                     &mut visited,
                     &mut stack,
                     start_position,
-                    max_steps,
+                    max_steps as _,
                 );
                 run_time = seconds_passed + interval;
             } else if visited.len() == tiles_len {
