@@ -54,4 +54,4 @@ sh runWasm.sh
 ### Controls
 
 - **Arrow Keys**: Navigate through the maze
-- **On screen navigation buttns included**
+- **On screen navigation buttons included**
