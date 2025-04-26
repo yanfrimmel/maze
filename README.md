@@ -2,7 +2,7 @@
 
 2D Maze game, the game is built using Rust and the Macroquad game framework.
 
-[WASM version - in development](https://yanfrimmel.github.io/crab-game/)
+[WASM version - in development](https://yanfrimmel.github.io/maze/)
 
 ## Features
 
@@ -23,8 +23,8 @@ Before running the game, ensure you have the following installed:
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/your-username/crab-game.git
-   cd crab-game
+   git clone https://github.com/yanfrimmel/maze.git
+   cd maze
    ```
 
 2. Build the project:
