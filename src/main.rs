@@ -82,7 +82,7 @@ impl Player {
             tile_pos: (col, row),
             screen_pos: Vec2::new(screen_x, screen_y),
             speed: tile_size * 4.0, // Move at 4 tiles per second
-            radius: tile_size * 0.35,
+            radius: tile_size * 0.25,
             color: YELLOW,
             current_direction: Direction::None,
             tile_size,
