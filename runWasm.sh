@@ -1,1 +1,1 @@
-cargo build --target wasm32-unknown-unknown && yes | cp ./src/resources/index.html ./target/wasm32-unknown-unknown/debug/ && yes | cp -i ./src/resources/mq_js_bundle.js ./target/wasm32-unknown-unknown/debug/ && basic-http-server ./target/wasm32-unknown-unknown/debug/
+cargo build --release --target wasm32-unknown-unknown && yes | cp ./src/resources/index.html ./target/wasm32-unknown-unknown/debug/ && yes | cp -i ./src/resources/mq_js_bundle.js ./target/wasm32-unknown-unknown/debug/ && basic-http-server ./target/wasm32-unknown-unknown/debug/
