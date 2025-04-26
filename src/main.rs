@@ -49,6 +49,307 @@ impl<T: std::fmt::Debug> std::fmt::Display for Vec2d<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Direction {
+    Up,
+    Right,
+    Down,
+    Left,
+    None,
+}
+
+// Player struct
+#[derive(Debug)]
+pub struct Player {
+    // Grid position
+    tile_pos: (usize, usize), // (col, row)
+    screen_pos: Vec2,
+    // Movement speed (pixels per second)
+    speed: f32,
+    radius: f32,
+    color: Color,
+    current_direction: Direction,
+    tile_size: f32,
+}
+
+impl Player {
+    pub fn new(col: usize, row: usize, tile_size: f32, first_x: f32, first_y: f32) -> Self {
+        // Calculate initial screen position (center of the starting tile)
+        let screen_x = first_x + (col as f32 * tile_size) + (tile_size / 2.0);
+        let screen_y = first_y + (row as f32 * tile_size) + (tile_size / 2.0);
+
+        Self {
+            tile_pos: (col, row),
+            screen_pos: Vec2::new(screen_x, screen_y),
+            speed: tile_size * 4.0, // Move at 4 tiles per second
+            radius: tile_size * 0.35,
+            color: YELLOW,
+            current_direction: Direction::None,
+            tile_size,
+        }
+    }
+
+    pub fn draw(&self) {
+        draw_circle(
+            self.screen_pos.x,
+            self.screen_pos.y,
+            self.radius,
+            self.color,
+        );
+    }
+
+    pub fn update(&mut self, dt: f32, tiles: &Vec2d<Tile>, first_x: f32, first_y: f32) {
+        if self.current_direction == Direction::None {
+            // Not moving, make sure we're centered on the tile
+            self.center_on_tile(first_x, first_y);
+            return;
+        }
+
+        // Calculate movement vector based on direction
+        let move_vector = match self.current_direction {
+            Direction::Up => Vec2::new(0.0, -1.0),
+            Direction::Right => Vec2::new(1.0, 0.0),
+            Direction::Down => Vec2::new(0.0, 1.0),
+            Direction::Left => Vec2::new(-1.0, 0.0),
+            Direction::None => Vec2::new(0.0, 0.0),
+        };
+
+        // Calculate new position
+        let new_pos = self.screen_pos + move_vector * self.speed * dt;
+
+        // Calculate grid position from screen position (accounting for offset)
+        let grid_col = ((new_pos.x - first_x) / self.tile_size).floor() as usize;
+        let grid_row = ((new_pos.y - first_y) / self.tile_size).floor() as usize;
+
+        // Check for wall collisions
+        let can_move = match self.current_direction {
+            Direction::Up => !tiles
+                .index(self.tile_pos.0, self.tile_pos.1)
+                .walls
+                .contains(&Wall::Top),
+            Direction::Right => !tiles
+                .index(self.tile_pos.0, self.tile_pos.1)
+                .walls
+                .contains(&Wall::Right),
+            Direction::Down => !tiles
+                .index(self.tile_pos.0, self.tile_pos.1)
+                .walls
+                .contains(&Wall::Bottom),
+            Direction::Left => !tiles
+                .index(self.tile_pos.0, self.tile_pos.1)
+                .walls
+                .contains(&Wall::Left),
+            Direction::None => true,
+        };
+
+        if can_move {
+            // Update screen position
+            self.screen_pos = new_pos;
+
+            // Update tile position if changed
+            if grid_col != self.tile_pos.0 || grid_row != self.tile_pos.1 {
+                // Make sure the new position is within the maze bounds
+                if grid_col < tiles.cols && grid_row < tiles.rows {
+                    self.tile_pos = (grid_col, grid_row);
+                }
+            }
+        } else {
+            // Can't move in this direction, stop and center on current tile
+            self.current_direction = Direction::None;
+            self.center_on_tile(first_x, first_y);
+        }
+    }
+
+    fn center_on_tile(&mut self, first_x: f32, first_y: f32) {
+        // Calculate center position of current tile
+        let center_x = first_x + (self.tile_pos.0 as f32 * self.tile_size) + (self.tile_size / 2.0);
+        let center_y = first_y + (self.tile_pos.1 as f32 * self.tile_size) + (self.tile_size / 2.0);
+
+        // Smoothly move toward center
+        let dt = get_frame_time();
+        self.screen_pos.x = self.screen_pos.x + (center_x - self.screen_pos.x) * 10.0 * dt;
+        self.screen_pos.y = self.screen_pos.y + (center_y - self.screen_pos.y) * 10.0 * dt;
+    }
+
+    pub fn set_direction(&mut self, direction: Direction) {
+        self.current_direction = direction;
+    }
+
+    pub fn get_tile_position(&self) -> (usize, usize) {
+        self.tile_pos
+    }
+}
+
+// Direction button for on-screen controls
+#[derive(Debug)]
+pub struct DirectionButton {
+    rect: Rect,
+    direction: Direction,
+    color: Color,
+    hover_color: Color,
+    pressed_color: Color,
+    is_pressed: bool,
+}
+
+impl DirectionButton {
+    pub fn new(x: f32, y: f32, width: f32, height: f32, direction: Direction) -> Self {
+        Self {
+            rect: Rect::new(x, y, width, height),
+            direction,
+            color: Color::new(0.5, 0.5, 0.5, 0.7), // Semi-transparent gray
+            hover_color: Color::new(0.6, 0.6, 0.6, 0.8),
+            pressed_color: Color::new(0.4, 0.4, 0.4, 0.9),
+            is_pressed: false,
+        }
+    }
+
+    pub fn update(&mut self) -> Option<Direction> {
+        let mouse_pos = mouse_position();
+        let mouse_point = Vec2::new(mouse_pos.0, mouse_pos.1);
+        let was_pressed = self.is_pressed;
+
+        if self.rect.contains(mouse_point) {
+            if is_mouse_button_down(MouseButton::Left) {
+                self.is_pressed = true;
+                return Some(self.direction);
+            } else {
+                self.is_pressed = false;
+                if was_pressed {
+                    return Some(Direction::None); // Button released
+                }
+            }
+        } else if self.is_pressed && !is_mouse_button_down(MouseButton::Left) {
+            self.is_pressed = false;
+            return Some(Direction::None); // Button released (mouse moved off while pressed)
+        }
+
+        None
+    }
+
+    pub fn draw(&self) {
+        let color = if self.is_pressed {
+            self.pressed_color
+        } else if self
+            .rect
+            .contains(Vec2::new(mouse_position().0, mouse_position().1))
+        {
+            self.hover_color
+        } else {
+            self.color
+        };
+
+        draw_rectangle(self.rect.x, self.rect.y, self.rect.w, self.rect.h, color);
+
+        // Draw direction arrow
+        let center_x = self.rect.x + self.rect.w / 2.0;
+        let center_y = self.rect.y + self.rect.h / 2.0;
+        let arrow_size = self.rect.w.min(self.rect.h) * 0.5;
+
+        match self.direction {
+            Direction::Up => {
+                draw_triangle(
+                    Vec2::new(center_x, center_y - arrow_size / 2.0),
+                    Vec2::new(center_x - arrow_size / 2.0, center_y + arrow_size / 2.0),
+                    Vec2::new(center_x + arrow_size / 2.0, center_y + arrow_size / 2.0),
+                    BLACK,
+                );
+            }
+            Direction::Right => {
+                draw_triangle(
+                    Vec2::new(center_x + arrow_size / 2.0, center_y),
+                    Vec2::new(center_x - arrow_size / 2.0, center_y - arrow_size / 2.0),
+                    Vec2::new(center_x - arrow_size / 2.0, center_y + arrow_size / 2.0),
+                    BLACK,
+                );
+            }
+            Direction::Down => {
+                draw_triangle(
+                    Vec2::new(center_x, center_y + arrow_size / 2.0),
+                    Vec2::new(center_x - arrow_size / 2.0, center_y - arrow_size / 2.0),
+                    Vec2::new(center_x + arrow_size / 2.0, center_y - arrow_size / 2.0),
+                    BLACK,
+                );
+            }
+            Direction::Left => {
+                draw_triangle(
+                    Vec2::new(center_x - arrow_size / 2.0, center_y),
+                    Vec2::new(center_x + arrow_size / 2.0, center_y - arrow_size / 2.0),
+                    Vec2::new(center_x + arrow_size / 2.0, center_y + arrow_size / 2.0),
+                    BLACK,
+                );
+            }
+            Direction::None => {}
+        }
+    }
+}
+
+// Control pad with all four direction buttons
+pub struct ControlPad {
+    buttons: [DirectionButton; 4],
+}
+
+impl ControlPad {
+    pub fn new(x: f32, y: f32, size: f32) -> Self {
+        let button_size = size / 3.0;
+
+        // Create four directional buttons in a cross pattern
+        let up = DirectionButton::new(x + button_size, y, button_size, button_size, Direction::Up);
+
+        let right = DirectionButton::new(
+            x + button_size * 2.0,
+            y + button_size,
+            button_size,
+            button_size,
+            Direction::Right,
+        );
+
+        let down = DirectionButton::new(
+            x + button_size,
+            y + button_size * 2.0,
+            button_size,
+            button_size,
+            Direction::Down,
+        );
+
+        let left = DirectionButton::new(
+            x,
+            y + button_size,
+            button_size,
+            button_size,
+            Direction::Left,
+        );
+
+        Self {
+            buttons: [up, right, down, left],
+        }
+    }
+
+    pub fn update(&mut self, player: &mut Player) {
+        for button in &mut self.buttons {
+            if let Some(direction) = button.update() {
+                player.set_direction(direction);
+            }
+        }
+
+        // Also check keyboard input
+        if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
+            player.set_direction(Direction::Up);
+        } else if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
+            player.set_direction(Direction::Right);
+        } else if is_key_down(KeyCode::Down) || is_key_down(KeyCode::S) {
+            player.set_direction(Direction::Down);
+        } else if is_key_down(KeyCode::Left) || is_key_down(KeyCode::A) {
+            player.set_direction(Direction::Left);
+        }
+    }
+
+    pub fn draw(&self) {
+        for button in &self.buttons {
+            button.draw();
+        }
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub enum Wall {
     Left = 1,
@@ -59,8 +360,8 @@ pub enum Wall {
 
 #[derive(Debug, Clone)]
 pub struct Tile {
-    row: usize,
     col: usize,
+    row: usize,
     walls: HashSet<Wall>,
     screen_position: Vec2,
     width: f32,
@@ -98,8 +399,8 @@ impl Tile {
         walls.insert(Wall::Right);
         walls.insert(Wall::Bottom);
         Self {
-            row,
             col,
+            row,
             walls,
             screen_position: (x, y).into(),
             width,
@@ -172,17 +473,6 @@ fn generate_tiles() -> Vec2d<Tile> {
     Vec2d::new(tiles, tiles_h as usize, tiles_w as usize)
 }
 
-/// Performs maze generation using the iterative backtracking algorithm with a step limit
-///
-/// Parameters:
-/// - tiles: The 2D grid of tiles to carve the maze into
-/// - visited: HashSet tracking which cells have been visited
-/// - stack: Stack used for backtracking
-/// - start_position: The starting position (column, row) for maze generation
-/// - max_steps: Maximum number of steps to take before stopping (0 for unlimited)
-///
-/// Returns:
-/// - The final position (column, row) where generation ended
 pub fn iterative_backtracking(
     tiles: &mut Vec2d<Tile>,
     visited: &mut HashSet<(usize, usize)>,
@@ -436,8 +726,25 @@ async fn main() {
     let mut run_time: f64 = interval;
     let mut generation_done = false;
 
+    let first_tile = tiles.vec.get(0).unwrap();
+    let first_tile_pos = first_tile.screen_position.clone();
+    let mut player: Player = Player::new(
+        0,
+        0,
+        first_tile.width,
+        first_tile.screen_position.x,
+        first_tile.screen_position.y,
+    );
+
+    // Create control pad
+    let control_size = screen_height() * 0.25;
+    let controls_x = screen_width() - control_size - 20.0;
+    let controls_y = screen_height() - control_size - 20.0;
+    let mut control_pad = ControlPad::new(controls_x, controls_y, control_size);
+
     loop {
         clear_background(BLACK);
+        let dt = get_frame_time();
 
         if !generation_done {
             let seconds_passed = get_time();
@@ -463,27 +770,17 @@ async fn main() {
             tile.draw(&tile_material);
         }
 
-        // let mut test = Tile::new(100.0, 100.0, 100.0, 100.0, BROWN);
-        // test.remove_wall(&Wall::Left);
-        // test.draw(&tile_material);
-        //
-        // let mut test2 = Tile::new(200.0, 100.0, 100.0, 100.0, BROWN);
-        // test2.remove_wall(&Wall::Top);
-        // test2.draw(&tile_material);
-        //
-        // let mut test3 = Tile::new(100.0, 200.0, 100.0, 100.0, BROWN);
-        // test3.remove_wall(&Wall::Bottom);
-        // test3.draw(&tile_material);
-        //
-        // let mut test4 = Tile::new(200.0, 200.0, 100.0, 100.0, BROWN);
-        // test4.remove_wall(&Wall::Right);
-        // test4.remove_wall(&Wall::Left);
-        // test4.remove_wall(&Wall::Bottom);
-        // test4.remove_wall(&Wall::Top);
-        // test4.draw(&tile_material);
-
         // Reset to default material
         gl_use_default_material();
+
+        if generation_done {
+            // Handle keyboard input as an alternative to on-screen buttons
+            control_pad.update(&mut player);
+            player.update(dt, &tiles, first_tile_pos.x, first_tile_pos.y);
+            player.draw();
+            control_pad.draw();
+        }
+
         draw_fps();
         next_frame().await
     }
