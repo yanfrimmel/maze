@@ -73,11 +73,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(col: usize, row: usize, tile_size: f32, first_x: f32, first_y: f32) -> Self {
-        // Calculate initial screen position (center of the starting tile)
-        let screen_x = first_x + (col as f32 * tile_size) + (tile_size / 2.0);
-        let screen_y = first_y + (row as f32 * tile_size) + (tile_size / 2.0);
-
+    pub fn new(col: usize, row: usize, tile_size: f32, screen_x: f32, screen_y: f32) -> Self {
         Self {
             tile_pos: (col, row),
             screen_pos: Vec2::new(screen_x, screen_y),
@@ -98,11 +94,16 @@ impl Player {
         );
     }
 
-    pub fn update(&mut self, dt: f32, tiles: &Vec2d<Tile>, first_x: f32, first_y: f32) {
+    // returns if found exit
+    pub fn update(&mut self, dt: f32, tiles: &Vec2d<Tile>, first_x: f32, first_y: f32) -> bool {
+        if tiles.index(self.tile_pos.0, self.tile_pos.1).exit {
+            return true;
+        }
+
         if self.current_direction == Direction::None {
             // Not moving, make sure we're centered on the tile
             self.center_on_tile(first_x, first_y);
-            return;
+            return false;
         }
 
         // Calculate movement vector based on direction
@@ -158,6 +159,7 @@ impl Player {
             self.current_direction = Direction::None;
             self.center_on_tile(first_x, first_y);
         }
+        false
     }
 
     fn center_on_tile(&mut self, first_x: f32, first_y: f32) {
@@ -188,6 +190,7 @@ pub struct DirectionButton {
     color: Color,
     hover_color: Color,
     pressed_color: Color,
+    triangle_color: Color,
     is_pressed: bool,
 }
 
@@ -196,9 +199,10 @@ impl DirectionButton {
         Self {
             rect: Rect::new(x, y, width, height),
             direction,
-            color: Color::new(0.5, 0.5, 0.5, 0.7), // Semi-transparent gray
-            hover_color: Color::new(0.6, 0.6, 0.6, 0.8),
-            pressed_color: Color::new(0.4, 0.4, 0.4, 0.9),
+            color: Color::new(0.5, 0.5, 0.5, 0.3), // Semi-transparent gray
+            hover_color: Color::new(0.6, 0.6, 0.6, 0.4),
+            pressed_color: Color::new(0.4, 0.4, 0.4, 0.5),
+            triangle_color: Color::new(0.0, 0.0, 0.0, 0.2),
             is_pressed: false,
         }
     }
@@ -251,7 +255,7 @@ impl DirectionButton {
                     Vec2::new(center_x, center_y - arrow_size / 2.0),
                     Vec2::new(center_x - arrow_size / 2.0, center_y + arrow_size / 2.0),
                     Vec2::new(center_x + arrow_size / 2.0, center_y + arrow_size / 2.0),
-                    BLACK,
+                    self.triangle_color,
                 );
             }
             Direction::Right => {
@@ -259,7 +263,7 @@ impl DirectionButton {
                     Vec2::new(center_x + arrow_size / 2.0, center_y),
                     Vec2::new(center_x - arrow_size / 2.0, center_y - arrow_size / 2.0),
                     Vec2::new(center_x - arrow_size / 2.0, center_y + arrow_size / 2.0),
-                    BLACK,
+                    self.triangle_color,
                 );
             }
             Direction::Down => {
@@ -267,7 +271,7 @@ impl DirectionButton {
                     Vec2::new(center_x, center_y + arrow_size / 2.0),
                     Vec2::new(center_x - arrow_size / 2.0, center_y - arrow_size / 2.0),
                     Vec2::new(center_x + arrow_size / 2.0, center_y - arrow_size / 2.0),
-                    BLACK,
+                    self.triangle_color,
                 );
             }
             Direction::Left => {
@@ -275,7 +279,7 @@ impl DirectionButton {
                     Vec2::new(center_x - arrow_size / 2.0, center_y),
                     Vec2::new(center_x + arrow_size / 2.0, center_y - arrow_size / 2.0),
                     Vec2::new(center_x + arrow_size / 2.0, center_y + arrow_size / 2.0),
-                    BLACK,
+                    self.triangle_color,
                 );
             }
             Direction::None => {}
@@ -367,6 +371,7 @@ pub struct Tile {
     width: f32,
     height: f32,
     color: Color,
+    exit: bool,
 }
 
 impl PartialEq for Tile {
@@ -406,6 +411,7 @@ impl Tile {
             width,
             height,
             color,
+            exit: false,
         }
     }
 
@@ -678,6 +684,14 @@ fn get_unvisited_neighbors(
     neighbors
 }
 
+fn choose_exit_tile(tiles: &mut Vec2d<Tile>) {
+    let col = rand::gen_range(0, tiles.cols);
+    let row = rand::gen_range(0, tiles.rows);
+    let tile = tiles.index_mut(col, row);
+    tile.exit = true;
+    tile.color = YELLOW;
+}
+
 #[macroquad::main("Maze")]
 async fn main() {
     let time = macroquad::miniquad::date::now();
@@ -732,8 +746,8 @@ async fn main() {
         0,
         0,
         first_tile.width,
-        first_tile.screen_position.x,
-        first_tile.screen_position.y,
+        first_tile.screen_position.x + (0 as f32 * first_tile.width) + (first_tile.width / 2.0),
+        first_tile.screen_position.y + (0 as f32 * first_tile.width) + (first_tile.width / 2.0),
     );
 
     // Create control pad
@@ -761,6 +775,7 @@ async fn main() {
             } else if visited.len() == tiles_len {
                 let precentage = rand::gen_range(0.01, 0.05);
                 remove_random_walls(&mut tiles, precentage);
+                choose_exit_tile(&mut tiles);
                 generation_done = true;
                 println!("Maze generation done!")
             }
@@ -776,9 +791,24 @@ async fn main() {
         if generation_done {
             // Handle keyboard input as an alternative to on-screen buttons
             control_pad.update(&mut player);
-            player.update(dt, &tiles, first_tile_pos.x, first_tile_pos.y);
             player.draw();
             control_pad.draw();
+            if player.update(dt, &tiles, first_tile_pos.x, first_tile_pos.y) {
+                generation_done = false;
+                tiles = generate_tiles();
+                visited.clear();
+                stack.clear();
+                let start_row = rand::gen_range(0, tiles.rows);
+                let start_col = rand::gen_range(0, tiles.cols);
+                start_position = (start_col, start_row);
+                player = Player::new(
+                    player.tile_pos.0,
+                    player.tile_pos.1,
+                    player.tile_size,
+                    player.screen_pos.x,
+                    player.screen_pos.y,
+                )
+            }
         }
 
         draw_fps();
