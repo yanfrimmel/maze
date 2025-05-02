@@ -330,12 +330,16 @@ impl ControlPad {
 
     pub fn update(&mut self, player: &mut Player) {
         for button in &mut self.buttons {
-            if let Some(direction) = button.update() {
-                player.set_direction(direction);
+            match button.update() {
+                Some(direction) => {
+                    if direction != Direction::None {
+                        player.set_direction(direction);
+                    }
+                }
+                None => {}
             }
         }
 
-        // Also check keyboard input
         if is_key_down(KeyCode::Up) || is_key_down(KeyCode::W) {
             player.set_direction(Direction::Up);
         } else if is_key_down(KeyCode::Right) || is_key_down(KeyCode::D) {
